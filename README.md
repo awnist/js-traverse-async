@@ -47,6 +47,6 @@ Use [npm](http://www.npmjs.org/).
 
 Otherwise, you can check traverse-async into your repository and expose it:
 
-    $ git clone git://github.com/awnist/traverse-async.git node_modules/traverse-async/
+    $ git clone git://github.com/awnist/js-traverse-async.git node_modules/traverse-async/
 
 traverse-async is [UNLICENSED](http://unlicense.org/).
