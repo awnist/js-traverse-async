@@ -1,0 +1,26 @@
+{
+    "name" : "traverse-async",
+    "version" : "0.0.1",
+    "description" : "Asynchronously traverse and transform objects by visiting every node on a recursive walk",
+    "author": "Awnist <hi@awnist.com> (http://awnist.com)",
+    "main" : "./lib/traverse-async.js",
+    "repository" : {
+        "type" : "git",
+        "url" : "git://github.com/awnist/js-traverse-async"
+    },
+    "homepage" : "https://github.com/awnist/js-traverse-async",
+    "keywords" : [
+        "traverse",
+        "walk",
+        "recursive",
+        "map",
+        "deep",
+        "clone",
+        "async",
+        "asynchronous",
+        "object"
+    ],
+    "scripts": {
+      "prepublish": "coffee -o lib/ -c src/"
+    }
+}
