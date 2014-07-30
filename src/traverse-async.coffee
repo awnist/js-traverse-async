@@ -2,6 +2,10 @@ async = require 'async'
 
 isObj = (obj) -> '[object Object]' == Object::toString.call(obj)
 
+config = { parallel: 1 }
+
+module.exports.config = (obj) -> config[key] = val for key, val of obj
+
 module.exports.traverse = (data, userCallback, done) ->
 
   traverseNode = (context, next) ->
@@ -19,7 +23,7 @@ module.exports.traverse = (data, userCallback, done) ->
 
     userCallback.call context, context.obj, next
 
-  q = async.queue traverseNode, 1
+  q = async.queue traverseNode, config.parallel
 
   q.drain = -> done(data) if done
 
