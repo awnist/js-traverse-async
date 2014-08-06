@@ -4,27 +4,26 @@ isObj = (obj) -> '[object Object]' == Object::toString.call(obj)
 
 config = { parallel: 1 }
 
-module.exports.config = (obj) -> config[key] = val for key, val of obj
+exports.config = (obj) -> config[key] = val for key, val of obj
 
-module.exports.traverse = (data, userCallback, done) ->
+exports.traverse = (data, userCallback, done) ->
 
   traverseNode = (context, next) ->
 
-    for key in Object.keys context.obj
-
-      if isObj context.obj[key]
+    # is object and not promise?...
+    if isObj(context.node) and typeof context.node.then isnt "function"
+      # ...then queue all children
+      for key in Object.keys context.node
         q.push
-          parent: context.obj
-          obj: context.obj[key]
+          parent: context.node
+          node: context.node[key]
           key: key
           path: context.path.concat [key]
-        # , (err) ->
-        #   console.log "Done with", key
 
-    userCallback.call context, context.obj, next
+    userCallback.call context, context.node, next
 
   q = async.queue traverseNode, config.parallel
 
   q.drain = -> done(data) if done
 
-  q.push { obj: data, path: [] }
+  q.push { node: data, path: [], isRoot: true }
