@@ -1,6 +1,7 @@
 async = require 'async'
 
-# isObj = (obj) -> '[object Object]' == Object::toString.call(obj)
+isObj = (obj) -> '[object Object]' == Object::toString.call(obj)
+isArr = (arr) -> '[object Array]' == Object::toString.call(arr)
 
 config = { parallel: 1 }
 
@@ -11,7 +12,7 @@ exports.traverse = (data, userCallback, done) ->
   traverseNode = (context, next) ->
 
     # is object and not promise?...
-    if typeof context.node is "object" and typeof context.node.then isnt "function"
+    if (isArr(context.node) or isObj(context.node)) and typeof context.node.then isnt "function"
       # ...then queue all children
       for key in Object.keys context.node
         q.push
