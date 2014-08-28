@@ -5,7 +5,7 @@ traverse-async is a Javascript/node.js module that asynchronously and recursivel
 # Usage
 
 ```
-    var traverse = require('traverse-async');
+    var traverse = require('traverse-async').traverse;
 
     traverse(object, function(node, next){
         console.log("Current node", node);
@@ -44,7 +44,7 @@ An array of string keys from the root to the present node
 Walk an object tree, resolving promises at arbitrary, nested locations:
 
 ```
-    var traverseasync = require('traverse-async');
+    var traverseasync = require('traverse-async').traverse;
 
     var promises = {};
 
