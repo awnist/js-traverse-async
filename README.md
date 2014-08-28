@@ -44,11 +44,11 @@ An array of string keys from the root to the present node
 Walk an object tree, resolving promises at arbitrary, nested locations:
 
 ```
-    var traverseasync = require('traverse-async').traverse;
+    var traverse = require('traverse-async').traverse;
 
     var promises = {};
 
-    traverseasync.traverse(result, function(value, next) {
+    traverse.traverse(result, function(value, next) {
       var key, parent, path;
       if (isPromise(this.node)) {
         parent = this.parent;
