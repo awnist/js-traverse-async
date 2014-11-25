@@ -29,4 +29,4 @@ exports.traverse = (data, userCallback, done) ->
 
   q.push { node: data, path: [], isRoot: true }
 
-  q
+  break: q.kill
