@@ -16,6 +16,19 @@ traverse-async is a Javascript/node.js module that asynchronously and recursivel
     });
 ```
 
+# Stopping the entire queue
+
+traverse-async returns an object on each traverse that allows you to kill the whole queue when necessary.
+
+```
+    var queue = traverse(object, function(node, next){
+
+        if (something) { queue.break() }
+
+    });
+
+```
+
 # Context
 
 The callback has a context (its `this` object) with these attributes:
