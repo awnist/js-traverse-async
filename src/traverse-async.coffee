@@ -28,3 +28,5 @@ exports.traverse = (data, userCallback, done) ->
   q.drain = -> done(data) if done
 
   q.push { node: data, path: [], isRoot: true }
+
+  break: q.kill
