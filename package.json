@@ -1,6 +1,6 @@
 {
   "name": "traverse-async",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Asynchronously traverse and transform objects by visiting every node on a recursive walk",
   "author": "Awnist <hi@awnist.com> (http://awnist.com)",
   "main": "./lib/traverse-async.js",
