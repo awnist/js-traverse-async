@@ -1,10 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const ping = (fn) =>
-  new Promise((resolve) => fn({ a: 1 }, (node, next) => next(), resolve));
-
-// --- require() styles ---
+const ping = (fn) => fn({ a: 1 }, () => {});
 
 test('require returns the traverse function directly', async () => {
   const traverse = require('..');
@@ -12,12 +9,9 @@ test('require returns the traverse function directly', async () => {
   await ping(traverse);
 });
 
-test('require: config is a property on the traverse function', () => {
+test('require: traverse() returns a Promise', async () => {
   const traverse = require('..');
-  assert.equal(typeof traverse.config, 'function');
-});
-
-test('require: destructure config from the traverse function', () => {
-  const { config } = require('..');
-  assert.equal(typeof config, 'function');
+  const result = ping(traverse);
+  assert.ok(result instanceof Promise);
+  await result;
 });
