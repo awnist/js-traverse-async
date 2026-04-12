@@ -6,7 +6,7 @@
   "main": "./lib/traverse-async.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/awnist/js-traverse-async"
+    "url": "git://github.com/awnist/js-traverse-async.git"
   },
   "homepage": "https://github.com/awnist/js-traverse-async",
   "keywords": [
