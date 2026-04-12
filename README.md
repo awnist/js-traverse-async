@@ -160,11 +160,13 @@ console.log(found); // 'abc123', or null if not found
 
 Walks every node in `data` breadth-first, calling `callback` once per node.
 
-| Parameter           | Type              | Description                                                                                                                                                      |
-| ------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `data`              | any               | The root value to traverse. Objects and arrays are recursed into; primitives are visited as leaves.                                                              |
+
+| Parameter           | Type              | Description                                                                                                                                                         |
+| ------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`              | any               | The root value to traverse. Objects and arrays are recursed into; primitives are visited as leaves.                                                                 |
 | `callback(context)` | function          | Called for each node. Receives a [context object](#context). May be `async`. Call `skip()` to prune children, `stop()` to halt traversal, or do nothing to recurse. |
-| `options`           | object (optional) | `{ parallel, signal }` — see below.                                                                                                                              |
+| `options`           | object (optional) | `{ parallel, signal }` — see below.                                                                                                                                 |
+
 
 **Returns** a `Promise` that resolves with `data` once every node has been visited, or rejects if the callback throws or an abort signal fires.
 
@@ -291,13 +293,10 @@ Each `traverse()` call uses its own concurrency setting — there is no global s
 
 **Parallel caveats:**
 
-- **`context.node` is a snapshot.** Each node's value is captured when it is added to the queue. If a concurrent sibling mutates the same parent key, `context.node` will be stale — use `parent[key]` to read the live value.
-
+- `**context.node` is a snapshot.** Each node's value is captured when it is added to the queue. If a concurrent sibling mutates the same parent key, `context.node` will be stale — use `parent[key]` to read the live value.
 - **Last write wins.** With `parallel > 1`, two sibling callbacks may both produce a return value or mutate the same key. The one whose `finish()` runs last sets the final value. Avoid cross-sibling mutations when using parallelism.
-
 - **Children come from the replacement.** If a callback returns a new object, the traversal recurses into that replacement — not the original node. Siblings running concurrently are not affected since their children haven't been queued yet.
-
-- **`stop()` drops in-flight return values.** Once traversal is halted, any sibling callbacks still running to completion will have their return values silently discarded.
+- `**stop()` drops in-flight return values.** Once traversal is halted, any sibling callbacks still running to completion will have their return values silently discarded.
 
 #### `signal`
 
@@ -587,24 +586,27 @@ console.log(result);   // { name: 'ALICE', address: { city: 'LONDON' } }
 
 `klona` handles plain objects, arrays, `Date`, `RegExp`, `Map`, `Set`, and typed arrays. For plain JSON-like data, the built-in `structuredClone` works without any dependency.
 
----
 
-## Importing
-
-The package is a CommonJS module. It works with `require`, ESM `import`, and dynamic `import()`.
-
-```js
-// CJS
-const traverse = require('traverse-async');
-
-// ESM — default import
-import traverse from 'traverse-async';
-
-// ESM — dynamic
-const { default: traverse } = await import('traverse-async');
-```
 
 ---
+
+## Breaking changes in 1.0.0
+
+The API has been redesigned around Promises. If you are upgrading from 0.x, here is what changed:
+
+**Callback signature.** The callback no longer receives `(node, next, stop)` with `this` as context. It now receives a single context object: `({ node, key, parent, path, isRoot, skip, stop, push })`.
+
+**No** `next()`**.** You no longer call `next()` to advance the traversal. Just return from the callback (or return a Promise). Traversal proceeds automatically when the callback returns or its Promise resolves.
+
+`stop()` **vs** `skip()`**.** In 0.x, calling `stop()` skipped the current node's children. That behaviour is now `skip()`. The new `stop()` halts the entire traversal immediately and resolves the Promise.
+
+**Return value replaces the node.** Returning a non-`undefined` value from the callback now replaces that node in the tree. Previously the return value was ignored.
+
+`traverse()` **returns a Promise.** In 0.x it returned the internal queue object. The `done(err, data)` third argument is gone — use `await` or `.then()` instead.
+
+`config()` **is gone.** Pass `{ parallel: N }` as the third argument to `traverse()` instead.
+
+`break()` **is gone.** Use `stop()` to resolve early, or an `AbortController` to reject from outside the callback.
 
 ## License
 
