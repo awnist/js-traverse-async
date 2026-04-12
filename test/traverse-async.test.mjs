@@ -1,20 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import traverse, { config } from '../lib/traverse-async.js';
+import traverse from '../lib/traverse-async.js';
 
-// Helper: collect all visited nodes in order
-const collect = (data) =>
-  new Promise((resolve) => {
-    const visited = [];
-    traverse(
-      data,
-      function (node, next) {
-        visited.push({ node, context: { ...this } });
-        next();
-      },
-      () => resolve(visited)
-    );
+const collect = async (data) => {
+  const visited = [];
+  await traverse(data, (ctx) => {
+    visited.push({ node: ctx.node, context: { ...ctx } });
   });
+  return visited;
+};
 
 // --- Primitives ---
 
@@ -68,7 +62,7 @@ test('visits all keys of a flat object', async () => {
   assert.ok(nodes.includes(1));
   assert.ok(nodes.includes(2));
   assert.ok(nodes.includes(3));
-  assert.equal(visited.length, 4); // root + 3 values
+  assert.equal(visited.length, 4);
 });
 
 test('child key names are correct', async () => {
@@ -129,7 +123,7 @@ test('array element paths are correct', async () => {
 test('visits all nodes in a nested object', async () => {
   const obj = { a: { b: { c: 42 } } };
   const visited = await collect(obj);
-  assert.equal(visited.length, 4); // root, a, b, c
+  assert.equal(visited.length, 4);
 });
 
 test('path is correct at depth', async () => {
@@ -141,23 +135,9 @@ test('path is correct at depth', async () => {
 });
 
 test('traversal is breadth-first', async () => {
-  //   root
-  //   ├── a (= { b: 1 })
-  //   └── c (= 2)
-  //       └── b (= 1)
   const obj = { a: { b: 1 }, c: 2 };
   const order = [];
-  await new Promise((resolve) => {
-    traverse(
-      obj,
-      function (node, next) {
-        order.push(this.key || 'root');
-        next();
-      },
-      resolve
-    );
-  });
-  // BFS: root → a → c → b
+  await traverse(obj, ({ key }) => { order.push(key ?? 'root'); });
   assert.deepEqual(order, ['root', 'a', 'c', 'b']);
 });
 
@@ -175,42 +155,29 @@ test('empty array produces only root visit', async () => {
   assert.deepEqual(visited[0].node, []);
 });
 
-// --- done callback ---
+// --- Promise return ---
 
-test('done callback is called after all nodes visited', async () => {
-  let visitCount = 0;
-  let doneCalled = false;
-  await new Promise((resolve) => {
-    traverse(
-      { a: 1, b: 2 },
-      function (node, next) {
-        visitCount++;
-        next();
-      },
-      () => {
-        doneCalled = true;
-        assert.equal(visitCount, 3);
-        resolve();
-      }
-    );
-  });
-  assert.ok(doneCalled);
+test('traverse returns a Promise', () => {
+  const result = traverse({ a: 1 }, () => {});
+  assert.ok(result instanceof Promise);
+  return result;
 });
 
-test('done callback receives (null, data) on success', async () => {
+test('Promise resolves with the original data', async () => {
   const original = { x: 99 };
-  const [err, received] = await new Promise((resolve) => {
-    traverse(original, (node, next) => next(), (err, data) => resolve([err, data]));
-  });
-  assert.equal(err, null);
+  const received = await traverse(original, () => {});
   assert.equal(received, original);
 });
 
-test('works without a done callback', async () => {
-  await new Promise((resolve) => {
-    traverse({ a: 1 }, (node, next) => next());
-    setTimeout(resolve, 50);
-  });
+test('Promise resolves after all nodes are visited', async () => {
+  let visitCount = 0;
+  await traverse({ a: 1, b: 2 }, () => { visitCount++; });
+  assert.equal(visitCount, 3);
+});
+
+test('works without awaiting', async () => {
+  traverse({ a: 1 }, () => {});
+  await new Promise((resolve) => setTimeout(resolve, 50));
 });
 
 // --- Promise nodes not traversed ---
@@ -219,120 +186,291 @@ test('promise-valued nodes are visited but not traversed into', async () => {
   const p = Promise.resolve({ nested: 'should not appear' });
   const visited = await collect({ p });
   assert.equal(visited.length, 2);
-  assert.ok(visited.find((v) => v.node === p), 'promise node was visited');
+  assert.ok(visited.find((v) => v.node === p));
   assert.equal(visited.find((v) => v.node === 'should not appear'), undefined);
 });
 
-// --- Mutation: replacement vs next(override) ---
+// --- Mutation ---
 
-test('replacing this.parent[this.key] makes next() recurse into the replacement', async () => {
+test('replacing parent[key] makes traversal recurse into the replacement', async () => {
   const original = { child: 1 };
   const replacement = { child: 99 };
   const visited = [];
 
-  await new Promise((resolve) => {
-    traverse(
-      { a: original },
-      function (node, next) {
-        visited.push(node);
-        if (this.key === 'a') {
-          this.parent[this.key] = replacement;
-        }
-        next();
-      },
-      resolve
-    );
+  await traverse({ a: original }, ({ node, key, parent }) => {
+    visited.push(node);
+    if (key === 'a') parent[key] = replacement;
   });
 
-  assert.ok(!visited.includes(1), 'original child value was not traversed');
-  assert.ok(visited.includes(99), 'replacement child value was traversed');
+  assert.ok(!visited.includes(1));
+  assert.ok(visited.includes(99));
 });
 
-// --- Mutation via parent ---
-
-test('nodes can be mutated via this.parent[this.key]', async () => {
+test('nodes can be mutated via parent[key]', async () => {
   const obj = { a: 1, b: 2 };
-  await new Promise((resolve) => {
-    traverse(
-      obj,
-      function (node, next) {
-        if (this.parent) this.parent[this.key] = node * 10;
-        next();
-      },
-      resolve
-    );
+  await traverse(obj, ({ node, key, parent }) => {
+    if (parent) parent[key] = node * 10;
   });
   assert.equal(obj.a, 10);
   assert.equal(obj.b, 20);
 });
 
-test('nodes can be deleted via this.parent', async () => {
+test('nodes can be deleted via parent', async () => {
   const obj = { keep: 1, remove: 2 };
-  await new Promise((resolve) => {
-    traverse(
-      obj,
-      function (node, next) {
-        if (this.key === 'remove') delete this.parent[this.key];
-        next();
-      },
-      resolve
-    );
+  await traverse(obj, ({ key, parent }) => {
+    if (key === 'remove') delete parent[key];
   });
   assert.equal(Object.keys(obj).length, 1);
   assert.ok('keep' in obj);
   assert.ok(!('remove' in obj));
 });
 
-// --- break ---
+// --- return value as replacement ---
 
-test('break stops traversal and done is never called', async () => {
-  const visitedKeys = [];
-  let doneCalled = false;
+test('returning a value replaces the node', async () => {
+  const obj = { a: 1, b: 2 };
+  await traverse(obj, ({ node, key }) => {
+    if (key) return node * 10;
+  });
+  assert.equal(obj.a, 10);
+  assert.equal(obj.b, 20);
+});
 
-  const q = traverse(
-    { a: 1, b: 2, c: 3 },
-    function (node, next) {
-      if (this.isRoot) {
-        q.break();
-        return;
-      }
-      visitedKeys.push(this.key);
-      next();
-    },
-    () => { doneCalled = true; }
+test('returning undefined leaves the node unchanged', async () => {
+  const obj = { a: 1, b: 2 };
+  await traverse(obj, ({ key }) => {
+    if (key === 'a') return 99;
+    // no return for b — should stay as 2
+  });
+  assert.equal(obj.a, 99);
+  assert.equal(obj.b, 2);
+});
+
+test('returning an object causes traversal to recurse into it', async () => {
+  const obj = { a: 1 };
+  await traverse(obj, ({ node, key }) => {
+    if (key === 'a') return { x: 10, y: 20 };
+  });
+  assert.deepEqual(obj.a, { x: 10, y: 20 });
+});
+
+test('async callback: returned value replaces the node', async () => {
+  const obj = { a: 'hello', b: 'world' };
+  await traverse(obj, async ({ node, key }) => {
+    if (key) {
+      await Promise.resolve();
+      return node.toUpperCase();
+    }
+  });
+  assert.equal(obj.a, 'HELLO');
+  assert.equal(obj.b, 'WORLD');
+});
+
+test('returning a value at root is ignored (no parent to assign into)', async () => {
+  const obj = { a: 1 };
+  const result = await traverse(obj, ({ isRoot }) => {
+    if (isRoot) return { replaced: true };
+  });
+  assert.equal(result, obj);
+  assert.equal(obj.a, 1);
+  assert.equal(obj.replaced, undefined);
+});
+
+test('skip() with a return value replaces node but skips children', async () => {
+  const obj = { a: { deep: 1 }, b: 2 };
+  const visited = [];
+  await traverse(obj, ({ key, skip }) => {
+    visited.push(key ?? 'root');
+    if (key === 'a') { skip(); return { replaced: true }; }
+  });
+  assert.deepEqual(obj.a, { replaced: true });
+  assert.ok(!visited.includes('deep'));
+  assert.ok(!visited.includes('replaced'));
+});
+
+// --- skip arrays ---
+
+test('skip() on an array prevents its elements from being visited', async () => {
+  const data = { items: [1, 2, 3], name: 'test' };
+  const visited = [];
+  await traverse(data, ({ node, key, skip }) => {
+    visited.push(key ?? 'root');
+    if (Array.isArray(node)) return skip();
+  });
+  assert.ok(visited.includes('items'));
+  assert.ok(visited.includes('name'));
+  assert.ok(!visited.includes('0'));
+  assert.ok(!visited.includes('1'));
+  assert.ok(!visited.includes('2'));
+});
+
+test('skip() on arrays at any depth', async () => {
+  const data = { a: { list: [10, 20], b: 1 } };
+  const visited = [];
+  await traverse(data, ({ node, key, skip }) => {
+    visited.push(key ?? 'root');
+    if (Array.isArray(node)) return skip();
+  });
+  assert.ok(visited.includes('list'));
+  assert.ok(visited.includes('b'));
+  assert.ok(!visited.includes('0'));
+  assert.ok(!visited.includes('1'));
+});
+
+test('skipping arrays does not affect sibling object nodes', async () => {
+  const data = { arr: [1, 2], obj: { x: 1 } };
+  const visited = [];
+  await traverse(data, ({ node, key, skip }) => {
+    visited.push(key ?? 'root');
+    if (Array.isArray(node)) return skip();
+  });
+  assert.ok(visited.includes('x'));
+});
+
+// --- skip ---
+
+test('calling skip() skips children of the current node', async () => {
+  const visited = [];
+  await traverse({ a: { deep: 1 }, b: 2 }, ({ key, skip }) => {
+    visited.push(key ?? 'root');
+    if (key === 'a') skip();
+  });
+  assert.ok(visited.includes('root'));
+  assert.ok(visited.includes('a'));
+  assert.ok(visited.includes('b'));
+  assert.ok(!visited.includes('deep'));
+});
+
+test('return skip() also skips children', async () => {
+  const visited = [];
+  await traverse({ a: { deep: 1 }, b: 2 }, ({ key, skip }) => {
+    visited.push(key ?? 'root');
+    if (key === 'a') return skip();
+  });
+  assert.ok(visited.includes('root'));
+  assert.ok(visited.includes('a'));
+  assert.ok(visited.includes('b'));
+  assert.ok(!visited.includes('deep'));
+});
+
+test('skip() on root skips all children', async () => {
+  const visited = [];
+  await traverse({ a: 1, b: 2 }, ({ key, isRoot, skip }) => {
+    visited.push(key ?? 'root');
+    if (isRoot) skip();
+  });
+  assert.deepEqual(visited, ['root']);
+});
+
+test('skip() on a leaf has no effect', async () => {
+  const visited = [];
+  await traverse({ a: 1 }, ({ key, skip }) => {
+    visited.push(key ?? 'root');
+    if (key === 'a') skip(); // a is a leaf — skip has nothing to prune
+  });
+  assert.deepEqual(visited, ['root', 'a']);
+});
+
+test('skip() only affects the current node, not siblings', async () => {
+  const visited = [];
+  await traverse({ a: { x: 1 }, b: { y: 2 } }, ({ key, skip }) => {
+    visited.push(key ?? 'root');
+    if (key === 'a') skip();
+  });
+  assert.ok(!visited.includes('x'));
+  assert.ok(visited.includes('b'));
+  assert.ok(visited.includes('y'));
+});
+
+// --- stop ---
+
+test('calling stop() resolves the Promise immediately', async () => {
+  const visited = [];
+  await traverse({ a: 1, b: 2, c: 3 }, ({ key, isRoot, stop }) => {
+    if (isRoot) return;
+    visited.push(key);
+    if (key === 'a') stop();
+  });
+  assert.ok(!visited.includes('b'));
+  assert.ok(!visited.includes('c'));
+});
+
+test('return stop() also stops traversal', async () => {
+  const visited = [];
+  await traverse({ a: 1, b: 2, c: 3 }, ({ key, isRoot, stop }) => {
+    if (isRoot) return;
+    visited.push(key);
+    if (key === 'a') return stop();
+  });
+  assert.ok(!visited.includes('b'));
+  assert.ok(!visited.includes('c'));
+});
+
+test('stop() resolves rather than rejects', async () => {
+  const result = await traverse({ a: 1 }, ({ isRoot, stop }) => {
+    if (isRoot) stop();
+  });
+  assert.equal(result.a, 1);
+});
+
+// --- abort ---
+
+test('AbortSignal rejects with AbortError', async () => {
+  const controller = new AbortController();
+  await assert.rejects(
+    traverse({ a: 1, b: 2 }, ({ isRoot }) => {
+      if (isRoot) controller.abort();
+    }, { signal: controller.signal }),
+    (err) => err.name === 'AbortError'
   );
+});
 
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.ok(!doneCalled, 'done should not be called after break');
-  assert.equal(visitedKeys.length, 0, 'no children should be visited after break');
+test('AbortSignal.timeout() rejects when exceeded', async () => {
+  await assert.rejects(
+    traverse({ a: 1 }, () => new Promise(() => {}), { signal: AbortSignal.timeout(50) }),
+    (err) => err.name === 'AbortError' || err.name === 'TimeoutError'
+  );
+});
+
+test('already-aborted signal rejects immediately', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    traverse({ a: 1 }, () => {}, { signal: controller.signal }),
+    (err) => err.name === 'AbortError'
+  );
 });
 
 // --- push ---
 
-test('push adds a node to the traversal queue', async () => {
+test('ctx.push adds a node to the traversal queue', async () => {
   const extra = { injected: true };
   const visited = [];
 
-  await new Promise((resolve) => {
-    const q = traverse(
-      { a: 1 },
-      function (node, next) {
-        visited.push(node);
-        if (this.key === 'a') q.push({ node: extra, path: ['extra'], parent: null });
-        next();
-      },
-      resolve
-    );
+  await traverse({ a: 1 }, ({ node, key, push }) => {
+    visited.push(node);
+    if (key === 'a') push({ node: extra, path: ['extra'], parent: null });
   });
 
-  assert.ok(visited.includes(extra), 'manually pushed node was visited');
+  assert.ok(visited.includes(extra));
 });
 
-// --- config ---
+// --- parallel option ---
 
-test('config sets parallel concurrency', () => {
-  assert.doesNotThrow(() => config({ parallel: 4 }));
-  config({ parallel: 1 });
+test('parallel option allows concurrent processing', async () => {
+  let active = 0;
+  let maxActive = 0;
+
+  await new Promise((resolve, reject) => {
+    traverse({ a: 1, b: 2, c: 3 }, ({ isRoot }) => {
+      if (isRoot) return;
+      active++;
+      maxActive = Math.max(maxActive, active);
+      return new Promise((r) => setTimeout(() => { active--; r(); }, 30));
+    }, { parallel: 3 }).then(resolve).catch(reject);
+  });
+
+  assert.ok(maxActive >= 2, `expected >= 2 concurrent nodes, got ${maxActive}`);
 });
 
 // --- mixed array/object ---
@@ -344,93 +482,18 @@ test('traverses mixed nested arrays and objects', async () => {
   assert.deepEqual(vals.sort(), [1, 2]);
 });
 
-// --- stop ---
+// --- error handling ---
 
-test('stop skips children of the current node', async () => {
-  // { a: { deep: 1 }, b: 2 }
-  // calling stop on 'a' should skip 'deep' but still visit 'b'
-  const visited = [];
-  await new Promise((resolve) => {
-    traverse(
-      { a: { deep: 1 }, b: 2 },
-      function (node, next, stop) {
-        visited.push(this.key ?? 'root');
-        if (this.key === 'a') return stop();
-        next();
-      },
-      resolve
-    );
-  });
-  assert.ok(visited.includes('root'));
-  assert.ok(visited.includes('a'));
-  assert.ok(visited.includes('b'));
-  assert.ok(!visited.includes('deep'), 'deep should be pruned by stop on a');
+test('sync throw rejects the Promise', async () => {
+  await assert.rejects(
+    traverse({ a: 1 }, ({ key }) => { if (key === 'a') throw new Error('sync error'); }),
+    { message: 'sync error' }
+  );
 });
 
-test('stop on root skips all children', async () => {
-  const visited = [];
-  await new Promise((resolve) => {
-    traverse(
-      { a: 1, b: 2 },
-      function (node, next, stop) {
-        visited.push(this.key ?? 'root');
-        if (this.isRoot) return stop();
-        next();
-      },
-      resolve
-    );
-  });
-  assert.deepEqual(visited, ['root']);
-});
-
-test('stop on a leaf has no effect', async () => {
-  // stop on a primitive is a no-op — there are no children to prune anyway
-  const visited = [];
-  await new Promise((resolve) => {
-    traverse(
-      { a: 1 },
-      function (node, next, stop) {
-        visited.push(this.key ?? 'root');
-        return stop();
-      },
-      resolve
-    );
-  });
-  // root is pruned (no children visited), so only root is seen
-  assert.deepEqual(visited, ['root']);
-});
-
-test('stop only affects the current node, not siblings', async () => {
-  // Tree: { a: { x: 1 }, b: { y: 2 } }
-  // stop on 'a' — 'x' should not appear, but 'b' and 'y' should
-  const visited = [];
-  await new Promise((resolve) => {
-    traverse(
-      { a: { x: 1 }, b: { y: 2 } },
-      function (node, next, stop) {
-        visited.push(this.key ?? 'root');
-        if (this.key === 'a') return stop();
-        next();
-      },
-      resolve
-    );
-  });
-  assert.ok(!visited.includes('x'));
-  assert.ok(visited.includes('b'));
-  assert.ok(visited.includes('y'));
-});
-
-test('next() visits original children when no mutation occurs', async () => {
-  const visited = [];
-  await new Promise((resolve) => {
-    traverse(
-      { a: 1, b: 2 },
-      function (node, next) {
-        visited.push(this.key ?? 'root');
-        next();
-      },
-      resolve
-    );
-  });
-  assert.deepEqual(visited.sort(), ['a', 'b', 'root']);
+test('async throw rejects the Promise', async () => {
+  await assert.rejects(
+    traverse({ a: 1 }, async ({ key }) => { if (key === 'a') throw new Error('async error'); }),
+    { message: 'async error' }
+  );
 });
